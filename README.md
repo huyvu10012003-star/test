@@ -29,73 +29,71 @@ public String searchProducts(@RequestParam(required = false) String keyword, Mod
 
 
 
-Map<Long, Integer> purchasedMap;
-query.from(product)
-     .orderBy(
-         new CaseBuilder()
-             .when(product.id.in(purchasedMap.keySet()))
-             .then(Expressions.constant(0)) // đ? mua
-             .otherwise(Expressions.constant(1)) // chưa mua
-             .asc(),
-         // ti?p theo sort theo s? lư?ng trong session
-         new CaseBuilder()
-             .when(product.id.in(purchasedMap.keySet()))
-             .then(Expressions.constantMap(purchasedMap)) // mapping spId -> quantity
-             .otherwise(Expressions.constant(0))
-             .desc()
-     )
-     .fetch();
+public Page<MstProduct> findProducts(
+        Pageable pageable,
+        Map<Long, Integer> purchasedMap,
+        boolean onlyCart
+) {
 
+    QMstProduct product = QMstProduct.mstProduct;
 
-    public Page<MstProduct> findProducts(
-            Pageable pageable,
-            Map<Long, Integer> purchasedMap
-    ) {
+    // Guard null + empty
+    Map<Long, Integer> safeMap = purchasedMap != null ? purchasedMap : Collections.emptyMap();
+    Set<Long> purchasedIds = safeMap.keySet();
+    boolean hasPurchased = !purchasedIds.isEmpty();
 
-        QMstProduct product = QMstProduct.mstProduct;
+    BooleanExpression isPurchased = hasPurchased
+            ? product.id.in(purchasedIds)
+            : Expressions.FALSE;
 
-        // Guard null + empty
-        Map<Long, Integer> safeMap = purchasedMap != null ? purchasedMap : Collections.emptyMap();
-        Set<Long> purchasedIds = safeMap.keySet();
-        boolean hasPurchased = !purchasedIds.isEmpty();
+    JPAQuery<MstProduct> query = queryFactory.selectFrom(product);
 
-        BooleanExpression isPurchased = hasPurchased
-                ? product.id.in(purchasedIds)
-                : Expressions.FALSE;
-
-        JPAQuery<MstProduct> query = queryFactory
-                .selectFrom(product);
-
+    // ===== WHERE =====
+    if (onlyCart) {
         if (hasPurchased) {
-            query.orderBy(
-                    new CaseBuilder()
-                            .when(isPurchased).then(0)
-                            .otherwise(1)
-                            .asc(),
-                    new CaseBuilder()
-                            .when(isPurchased)
-                            .then(Expressions.constantMap(safeMap))
-                            .otherwise(0)
-                            .desc()
-            );
+            query.where(product.id.in(purchasedIds));
         } else {
-            // fallback sort m?c đ?nh
-            query.orderBy(product.createdAt.desc());
+            // onlyCart=true nhưng cart rỗng → trả empty page
+            return Page.empty(pageable);
         }
-
-        // paging
-        List<MstProduct> content = query
-                .offset(pageable.getOffset())
-                .limit(pageable.getPageSize())
-                .fetch();
-
-        long total = queryFactory
-                .selectFrom(product)
-                .fetchCount();
-
-        return new PageImpl<>(content, pageable, total);
     }
 
+    // ===== ORDER BY =====
+    if (hasPurchased) {
+        query.orderBy(
+                // 1. Ưu tiên sản phẩm đã mua lên đầu
+                new CaseBuilder()
+                        .when(isPurchased).then(0)
+                        .otherwise(1)
+                        .asc(),
+
+                // 2. Sort theo số lượng trong cart (giảm dần)
+                new CaseBuilder()
+                        .when(isPurchased)
+                        .then(Expressions.constantMap(safeMap))
+                        .otherwise(0)
+                        .desc(),
+
+                // 3. Fallback ổn định
+                product.createdAt.desc()
+        );
+    } else {
+        query.orderBy(product.createdAt.desc());
+    }
+
+    // ===== PAGING =====
+    List<MstProduct> content = query
+            .offset(pageable.getOffset())
+            .limit(pageable.getPageSize())
+            .fetch();
+
+    long total = queryFactory
+            .selectFrom(product)
+            .where(query.getMetadata().getWhere())
+            .fetchCount();
+
+    return new PageImpl<>(content, pageable, total);
+}
 private static final int PRIORITY_PURCHASED = 0;
 private static final int PRIORITY_NOT_PURCHASED = 1;
      
