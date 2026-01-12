@@ -45,6 +45,59 @@ query.from(product)
              .desc()
      )
      .fetch();
+
+
+    public Page<MstProduct> findProducts(
+            Pageable pageable,
+            Map<Long, Integer> purchasedMap
+    ) {
+
+        QMstProduct product = QMstProduct.mstProduct;
+
+        // Guard null + empty
+        Map<Long, Integer> safeMap = purchasedMap != null ? purchasedMap : Collections.emptyMap();
+        Set<Long> purchasedIds = safeMap.keySet();
+        boolean hasPurchased = !purchasedIds.isEmpty();
+
+        BooleanExpression isPurchased = hasPurchased
+                ? product.id.in(purchasedIds)
+                : Expressions.FALSE;
+
+        JPAQuery<MstProduct> query = queryFactory
+                .selectFrom(product);
+
+        if (hasPurchased) {
+            query.orderBy(
+                    new CaseBuilder()
+                            .when(isPurchased).then(0)
+                            .otherwise(1)
+                            .asc(),
+                    new CaseBuilder()
+                            .when(isPurchased)
+                            .then(Expressions.constantMap(safeMap))
+                            .otherwise(0)
+                            .desc()
+            );
+        } else {
+            // fallback sort m?c đ?nh
+            query.orderBy(product.createdAt.desc());
+        }
+
+        // paging
+        List<MstProduct> content = query
+                .offset(pageable.getOffset())
+                .limit(pageable.getPageSize())
+                .fetch();
+
+        long total = queryFactory
+                .selectFrom(product)
+                .fetchCount();
+
+        return new PageImpl<>(content, pageable, total);
+    }
+
+private static final int PRIORITY_PURCHASED = 0;
+private static final int PRIORITY_NOT_PURCHASED = 1;
      
      
      
