@@ -24,7 +24,7 @@ public String searchProducts(@RequestParam(required = false) String keyword, Mod
 
     model.addAttribute("products", products);
     model.addAttribute("keyword", keyword); // gi? l?i keyword
-    return "products"; // t�n template
+    return "products"; // tên template
 }
 
 
@@ -34,10 +34,10 @@ query.from(product)
      .orderBy(
          new CaseBuilder()
              .when(product.id.in(purchasedMap.keySet()))
-             .then(Expressions.constant(0)) // �? mua
-             .otherwise(Expressions.constant(1)) // ch�a mua
+             .then(Expressions.constant(0)) // đ? mua
+             .otherwise(Expressions.constant(1)) // chưa mua
              .asc(),
-         // ti?p theo sort theo s? l�?ng trong session
+         // ti?p theo sort theo s? lư?ng trong session
          new CaseBuilder()
              .when(product.id.in(purchasedMap.keySet()))
              .then(Expressions.constantMap(purchasedMap)) // mapping spId -> quantity
@@ -45,3 +45,59 @@ query.from(product)
              .desc()
      )
      .fetch();
+     
+     
+     
+     
+fetch("http://localhost:8080/cart/add", {
+  method: "POST", // thư?ng dùng POST đ? g?i d? li?u
+  headers: {
+    "Content-Type": "application/json" // báo server d? li?u d?ng JSON
+  },
+  body: JSON.stringify({
+    id: productId,
+    quantity: quantity
+  })
+})
+  .then(response => {
+    if (!response.ok) {
+      throw new Error("Network response was not ok " + response.statusText);
+    }
+    return response.json();
+  })
+  .then(data => {
+    console.log("Success:", data);
+  })
+  .catch(error => {
+    console.error("Error:", error);
+  });
+  
+public class CartController {
+
+    @PostMapping("/add")
+    public ResponseEntity<String> addToCart(@RequestBody CartItemRequest request) {
+        Long productId = request.getId();
+        Integer quantity = request.getQuantity();
+
+        // x? l? logic thêm vào gi? hàng
+        System.out.println("Product ID: " + productId + ", Quantity: " + quantity);
+
+        return ResponseEntity.ok("Added to cart");
+    }
+}
+
+
+<form th:action="@{/cart/add}" method="post">
+    <input type="hidden" name="id" th:value="${product.id}" />
+    <input type="number" name="quantity" th:value="1" min="1" />
+    <button type="submit">Add to Cart</button>
+</form>
+
+
+@PostMapping("/cart/add")
+public String addToCart(@ModelAttribute CartItemRequest request, Model model) {
+
+    System.out.println("Product ID: " + request.getId() + ", Quantity: " + request.getQuantity());
+    return "cart";
+}
+
